@@ -1,4 +1,6 @@
-# Rol de Turnos - Personal de Salud
+# ROL DE TURNOS - PERSONAL DE SALUD
+
+**BANCO DE SANGRE DE TARIJA**
 
 Aplicación móvil en línea creada con **Streamlit + SQLite** para cargar y visualizar roles de personal de salud por fecha, profesión y turno.
 
@@ -12,11 +14,14 @@ Aplicación móvil en línea creada con **Streamlit + SQLite** para cargar y vis
 - Usuario: `admin`
 - Contraseña: `admin123`
 
-> Se recomienda cambiar las contraseñas desde el panel de administrador después del primer ingreso.
+> La pantalla de ingreso no muestra usuarios ni contraseñas. Se recomienda cambiar las contraseñas desde el panel de administrador después del primer ingreso.
 
 ## Funciones
 
 - Vista móvil con letras grandes y colores por turno.
+- Título corregido para que no se corte en celular.
+- Subtítulo institucional: Banco de Sangre de Tarija.
+- Botón **Salir** visible para personal y administrador.
 - Tres turnos: Mañana, Tarde y Noche.
 - Tres grupos profesionales:
   - Médicos

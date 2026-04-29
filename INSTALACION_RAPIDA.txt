@@ -1,4 +1,5 @@
-ROL DE TURNOS SALUD - STREAMLIT CLOUD
+ROL DE TURNOS - PERSONAL DE SALUD
+BANCO DE SANGRE DE TARIJA
 
 ACCESOS INICIALES
 
@@ -9,6 +10,10 @@ Contraseña: personal123
 ADMINISTRADOR
 Usuario: admin
 Contraseña: admin123
+
+NOTA
+La pantalla de ingreso de la app ya no muestra usuarios ni contraseñas.
+El botón SALIR aparece también para el personal y vuelve a la pantalla principal.
 
 PASOS PARA SUBIR A GITHUB
 

@@ -11,7 +11,8 @@ import streamlit as st
 # =============================
 # CONFIGURACIÓN GENERAL
 # =============================
-APP_TITLE = "Rol de Turnos - Personal de Salud"
+APP_TITLE = "ROL DE TURNOS - PERSONAL DE SALUD"
+APP_SUBTITLE = "BANCO DE SANGRE DE TARIJA"
 DB_PATH = os.environ.get("ROL_SALUD_DB", "rol_salud.db")
 
 PROFESSIONS = [
@@ -45,24 +46,29 @@ st.markdown(
     """
     <style>
     .block-container {
-        padding-top: 1.1rem;
+        padding-top: 3.2rem;
         padding-left: 1rem;
         padding-right: 1rem;
         max-width: 1200px;
     }
     .main-title {
-        font-size: clamp(2rem, 7vw, 3.4rem);
+        font-size: clamp(1.65rem, 6vw, 3.1rem);
         font-weight: 900;
-        line-height: 1.05;
+        line-height: 1.18;
         color: #0f172a;
         text-align: center;
-        margin-bottom: .2rem;
+        margin-top: .8rem;
+        margin-bottom: .35rem;
+        padding-top: .45rem;
+        overflow: visible;
     }
     .subtitle {
-        font-size: clamp(1rem, 3.5vw, 1.35rem);
-        color: #475569;
+        font-size: clamp(1.15rem, 4vw, 1.7rem);
+        color: #b91c1c;
         text-align: center;
-        margin-bottom: 1rem;
+        margin-bottom: 1.1rem;
+        font-weight: 900;
+        letter-spacing: .04em;
     }
     .login-card {
         background: #ffffff;
@@ -164,7 +170,9 @@ st.markdown(
         border-radius: 13px;
     }
     @media (max-width: 768px) {
-        .block-container { padding-left: .75rem; padding-right: .75rem; }
+        .block-container { padding-top: 3.8rem; padding-left: .75rem; padding-right: .75rem; }
+        .main-title { font-size: clamp(1.45rem, 7vw, 2.35rem); line-height: 1.25; }
+        .subtitle { font-size: clamp(1rem, 4.4vw, 1.35rem); }
         .shift-card { min-height: auto; }
     }
     </style>
@@ -457,7 +465,13 @@ def html_escape(value: str) -> str:
 
 def render_header() -> None:
     st.markdown(f"<div class='main-title'>🏥 {APP_TITLE}</div>", unsafe_allow_html=True)
-    st.markdown("<div class='subtitle'>Sistema móvil en línea para roles de mañana, tarde y noche</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='subtitle'>{APP_SUBTITLE}</div>", unsafe_allow_html=True)
+
+
+def logout_button(label: str = "Salir") -> None:
+    if st.button(label, use_container_width=True, type="secondary"):
+        st.session_state.clear()
+        st.rerun()
 
 
 def render_roster(selected_date: date) -> None:
@@ -529,7 +543,6 @@ def login_screen() -> None:
         else:
             st.error("Usuario o contraseña incorrectos.")
 
-    st.info("Acceso personal: usuario **personal** / contraseña **personal123**. Acceso administrador: usuario **admin** / contraseña **admin123**.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -545,6 +558,7 @@ def sidebar_session() -> None:
 
 def user_view() -> None:
     render_header()
+    logout_button("Salir")
     sidebar_session()
     selected_date = st.date_input("Seleccionar fecha", value=date.today(), format="DD/MM/YYYY")
     render_roster(selected_date)
@@ -552,6 +566,7 @@ def user_view() -> None:
 
 def admin_view() -> None:
     render_header()
+    logout_button("Salir")
     sidebar_session()
     st.success("Modo administrador: puede cargar roles, personal y mensaje visible.")
 
