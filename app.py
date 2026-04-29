@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import os
 import html
+import re
 from datetime import date, datetime
 from typing import List, Dict, Optional, Tuple
 
@@ -152,6 +153,16 @@ st.markdown(
         font-weight: 800;
         line-height: 1.2;
     }
+    .staff-hours {
+        display: inline-block;
+        margin-top: .35rem;
+        padding: .25rem .55rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,.85);
+        border: 1px solid rgba(15, 23, 42, .12);
+        font-size: clamp(.95rem, 3.8vw, 1.25rem);
+        font-weight: 900;
+    }
     .empty-pill {
         background: rgba(255,255,255,.45);
         border: 1px dashed rgba(15, 23, 42, .25);
@@ -260,6 +271,15 @@ def init_db() -> None:
         )
         """
     )
+
+    # Migración: horarios individuales por persona asignada.
+    # Si la base ya existe de versiones anteriores, se agregan estas columnas sin perder datos.
+    cur.execute("PRAGMA table_info(assignments)")
+    assignment_columns = {row[1] for row in cur.fetchall()}
+    if "work_start" not in assignment_columns:
+        cur.execute("ALTER TABLE assignments ADD COLUMN work_start TEXT")
+    if "work_end" not in assignment_columns:
+        cur.execute("ALTER TABLE assignments ADD COLUMN work_end TEXT")
 
     cur.execute(
         """
@@ -412,7 +432,7 @@ def delete_staff(staff_id: int) -> None:
 def get_assignments(shift_date: str, profession: Optional[str] = None, shift: Optional[str] = None) -> List[sqlite3.Row]:
     conn = get_conn()
     query = """
-        SELECT a.id, a.shift_date, a.profession, a.shift, s.id AS staff_id, s.full_name, s.phone, s.active
+        SELECT a.id, a.shift_date, a.profession, a.shift, a.work_start, a.work_end, s.id AS staff_id, s.full_name, s.phone, s.active
         FROM assignments a
         JOIN staff s ON s.id = a.staff_id
         WHERE a.shift_date = ?
@@ -435,9 +455,35 @@ def selected_staff_ids(shift_date: str, profession: str, shift: str) -> List[int
     return [int(row["staff_id"]) for row in rows]
 
 
-def save_assignment(shift_date: str, profession: str, shift: str, staff_ids: List[int]) -> Tuple[bool, str]:
-    if len(staff_ids) > 5:
+def selected_assignment_hours(shift_date: str, profession: str, shift: str) -> Dict[int, Tuple[str, str]]:
+    rows = get_assignments(shift_date, profession, shift)
+    default_start, default_end = get_shift_hours(shift)
+    result: Dict[int, Tuple[str, str]] = {}
+    for row in rows:
+        result[int(row["staff_id"])] = (row["work_start"] or default_start, row["work_end"] or default_end)
+    return result
+
+
+def is_valid_time(value: str) -> bool:
+    if not re.match(r"^\d{2}:\d{2}$", value or ""):
+        return False
+    hour, minute = value.split(":")
+    return 0 <= int(hour) <= 23 and 0 <= int(minute) <= 59
+
+
+def save_assignment(shift_date: str, profession: str, shift: str, staff_hours: List[Tuple[int, str, str]]) -> Tuple[bool, str]:
+    if len(staff_hours) > 5:
         return False, "Solo se permiten hasta 5 profesionales por profesión y turno."
+
+    seen = set()
+    for staff_id, start_time, end_time in staff_hours:
+        if staff_id in seen:
+            return False, "Hay una persona repetida en el mismo turno."
+        seen.add(staff_id)
+        if not start_time.strip() or not end_time.strip():
+            return False, "Debe colocar hora de entrada y salida para cada persona seleccionada."
+        if not is_valid_time(start_time.strip()) or not is_valid_time(end_time.strip()):
+            return False, "Use formato de hora HH:MM. Ejemplo: 12:00 a 16:00."
 
     conn = get_conn()
     now = datetime.now().isoformat(timespec="seconds")
@@ -445,15 +491,15 @@ def save_assignment(shift_date: str, profession: str, shift: str, staff_ids: Lis
         "DELETE FROM assignments WHERE shift_date = ? AND profession = ? AND shift = ?",
         (shift_date, profession, shift),
     )
-    for staff_id in staff_ids:
+    for staff_id, start_time, end_time in staff_hours:
         conn.execute(
-            "INSERT OR IGNORE INTO assignments(shift_date, profession, shift, staff_id, created_at) VALUES(?,?,?,?,?)",
-            (shift_date, profession, shift, int(staff_id), now),
+            "INSERT OR IGNORE INTO assignments(shift_date, profession, shift, staff_id, work_start, work_end, created_at) VALUES(?,?,?,?,?,?,?)",
+            (shift_date, profession, shift, int(staff_id), start_time.strip(), end_time.strip(), now),
         )
     conn.commit()
     conn.close()
-    log_action("GUARDAR_ROL", f"{shift_date} | {profession} | {shift} | {len(staff_ids)} asignados")
-    return True, "Rol guardado correctamente."
+    log_action("GUARDAR_ROL", f"{shift_date} | {profession} | {shift} | {len(staff_hours)} asignados con horario individual")
+    return True, "Rol guardado correctamente con horarios individuales."
 
 
 def clear_day(shift_date: str) -> None:
@@ -520,29 +566,35 @@ def render_roster(selected_date: date) -> None:
     )
 
     assignments = get_assignments(db_date)
-    by_key: Dict[Tuple[str, str], List[str]] = {}
+    by_key: Dict[Tuple[str, str], List[Dict[str, str]]] = {}
     for row in assignments:
-        by_key.setdefault((row["profession"], row["shift"]), []).append(row["full_name"])
+        default_start, default_end = get_shift_hours(row["shift"])
+        by_key.setdefault((row["profession"], row["shift"]), []).append({
+            "name": row["full_name"],
+            "work_start": row["work_start"] or default_start,
+            "work_end": row["work_end"] or default_end,
+        })
 
     for profession in PROFESSIONS:
         st.markdown("<div class='profession-card'>", unsafe_allow_html=True)
         st.markdown(f"<div class='profession-title'>{html_escape(profession)}</div>", unsafe_allow_html=True)
         cols = st.columns(3)
         for idx, (shift, icon, bg, fg) in enumerate(SHIFTS):
-            names = by_key.get((profession, shift), [])
-            start_time, end_time = get_shift_hours(shift)
+            people = by_key.get((profession, shift), [])
             with cols[idx]:
                 people_html = ""
-                if names:
-                    for name in names:
-                        people_html += f"<div class='staff-pill'>👤 {html_escape(name)}</div>"
+                if people:
+                    for person in people:
+                        people_html += (
+                            f"<div class='staff-pill'>👤 {html_escape(person['name'])}"
+                            f"<br><span class='staff-hours'>🕒 {html_escape(person['work_start'])} a {html_escape(person['work_end'])}</span></div>"
+                        )
                 else:
                     people_html = "<div class='empty-pill'>Sin personal asignado</div>"
                 st.markdown(
                     f"""
                     <div class='shift-card' style='background:{bg}; color:{fg};'>
                         <div class='shift-title'>{icon} {html_escape(shift)}</div>
-                        <div class='shift-hours'>🕒 {html_escape(start_time)} a {html_escape(end_time)}</div>
                         {people_html}
                     </div>
                     """,
@@ -606,20 +658,18 @@ def admin_view() -> None:
     st.success("Modo administrador: puede cargar roles, personal y mensaje visible.")
 
     tab_rol, tab_personal, tab_horarios, tab_mensaje, tab_seguridad, tab_exportar = st.tabs(
-        ["📅 Cargar roles", "👥 Personal", "⏰ Horarios", "📢 Mensaje inferior", "🔐 Usuarios", "📦 Respaldo"]
+        ["📅 Cargar roles", "👥 Personal", "🕒 Horarios por persona", "📢 Mensaje inferior", "🔐 Usuarios", "📦 Respaldo"]
     )
 
     with tab_rol:
         st.subheader("Cargar rol por fecha")
         selected_date = st.date_input("Fecha del rol", value=date.today(), format="DD/MM/YYYY", key="admin_date")
         db_date = date_to_db(selected_date)
-        st.markdown("<span class='small-note'>Seleccione hasta 5 personas por profesión y turno.</span>", unsafe_allow_html=True)
+        st.markdown("<span class='small-note'>Seleccione hasta 5 personas por profesión y turno, colocando horario individual para cada una.</span>", unsafe_allow_html=True)
 
         for profession in PROFESSIONS:
             with st.expander(f"{profession}", expanded=True):
                 active_staff = list_staff(active_only=True, profession=profession)
-                options = {f"{row['full_name']}" + (f" - {row['phone']}" if row['phone'] else ""): int(row["id"]) for row in active_staff}
-                labels_by_id = {v: k for k, v in options.items()}
 
                 if not active_staff:
                     st.warning(f"No hay personal activo registrado para {profession}.")
@@ -628,24 +678,55 @@ def admin_view() -> None:
                 cols = st.columns(3)
                 for idx, (shift, icon, bg, fg) in enumerate(SHIFTS):
                     with cols[idx]:
-                        current_ids = selected_staff_ids(db_date, profession, shift)
-                        default_labels = [labels_by_id[i] for i in current_ids if i in labels_by_id]
-                        selection = st.multiselect(
-                            f"{icon} {shift}",
-                            options=list(options.keys()),
-                            default=default_labels,
-                            max_selections=5,
-                            key=f"sel_{db_date}_{profession}_{shift}",
-                            help="Máximo 5 profesionales.",
-                        )
-                        if st.button(f"Guardar {shift}", key=f"save_{db_date}_{profession}_{shift}", use_container_width=True):
-                            ids = [options[label] for label in selection]
-                            ok, msg = save_assignment(db_date, profession, shift, ids)
-                            if ok:
-                                st.success(msg)
-                            else:
-                                st.error(msg)
+                        current_hours = selected_assignment_hours(db_date, profession, shift)
+                        default_start, default_end = get_shift_hours(shift)
+                        st.markdown(f"### {icon} {shift}")
+                        st.caption("Marque al personal y coloque su horario individual.")
 
+                        with st.form(f"form_{db_date}_{profession}_{shift}"):
+                            staff_hours = []
+                            selected_count = 0
+                            for row in active_staff:
+                                staff_id = int(row["id"])
+                                assigned = staff_id in current_hours
+                                start_default, end_default = current_hours.get(staff_id, (default_start, default_end))
+
+                                selected = st.checkbox(
+                                    row["full_name"],
+                                    value=assigned,
+                                    key=f"chk_{db_date}_{profession}_{shift}_{staff_id}",
+                                )
+                                h1, h2 = st.columns(2)
+                                with h1:
+                                    start_time = st.text_input(
+                                        "Entrada",
+                                        value=start_default,
+                                        key=f"in_{db_date}_{profession}_{shift}_{staff_id}",
+                                        placeholder="12:00",
+                                    )
+                                with h2:
+                                    end_time = st.text_input(
+                                        "Salida",
+                                        value=end_default,
+                                        key=f"out_{db_date}_{profession}_{shift}_{staff_id}",
+                                        placeholder="16:00",
+                                    )
+                                if selected:
+                                    selected_count += 1
+                                    staff_hours.append((staff_id, start_time, end_time))
+                                st.markdown("---")
+
+                            save_btn = st.form_submit_button(f"Guardar {shift}", use_container_width=True)
+
+                        if save_btn:
+                            if selected_count > 5:
+                                st.error("Solo se permiten hasta 5 profesionales por profesión y turno.")
+                            else:
+                                ok, msg = save_assignment(db_date, profession, shift, staff_hours)
+                                if ok:
+                                    st.success(msg)
+                                else:
+                                    st.error(msg)
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
@@ -714,58 +795,21 @@ def admin_view() -> None:
                     st.rerun()
 
     with tab_horarios:
-        st.subheader("Horarios visibles por cada turno")
-        st.info("Estos horarios aparecerán en letras grandes dentro de cada turno, tanto para personal como para jefaturas.")
-
-        with st.form("shift_hours_form"):
-            new_hours = {}
-            for shift, icon, bg, fg in SHIFTS:
-                current_start, current_end = get_shift_hours(shift)
-                st.markdown(f"### {icon} {shift}")
-                c1, c2 = st.columns(2)
-                with c1:
-                    start_value = st.text_input(
-                        f"Hora de inicio - {shift}",
-                        value=current_start,
-                        key=f"start_{shift}",
-                        placeholder="Ejemplo: 07:00",
-                    )
-                with c2:
-                    end_value = st.text_input(
-                        f"Hora de salida - {shift}",
-                        value=current_end,
-                        key=f"end_{shift}",
-                        placeholder="Ejemplo: 13:00",
-                    )
-                new_hours[shift] = (start_value.strip(), end_value.strip())
-
-            save_hours = st.form_submit_button("Guardar horarios", use_container_width=True)
-
-        if save_hours:
-            incomplete = [shift for shift, (start, end) in new_hours.items() if not start or not end]
-            if incomplete:
-                st.error("Debe colocar hora de inicio y hora de salida en todos los turnos.")
-            else:
-                for shift, (start, end) in new_hours.items():
-                    set_shift_hours(shift, start, end)
-                st.success("Horarios actualizados correctamente.")
-                st.rerun()
-
-        st.divider()
-        st.subheader("Vista previa de horarios")
-        cols = st.columns(3)
-        for idx, (shift, icon, bg, fg) in enumerate(SHIFTS):
-            start_time, end_time = get_shift_hours(shift)
-            with cols[idx]:
-                st.markdown(
-                    f"""
-                    <div class='shift-card' style='background:{bg}; color:{fg}; min-height:auto;'>
-                        <div class='shift-title'>{icon} {html_escape(shift)}</div>
-                        <div class='shift-hours'>🕒 {html_escape(start_time)} a {html_escape(end_time)}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+        st.subheader("Horarios individuales por personal")
+        st.info(
+            "Los horarios ya no son generales por turno. Ahora se cargan en la pestaña 'Cargar roles': "
+            "marque a cada persona y escriba su hora de entrada y salida. Ejemplo: Dra. Jaqueline — 12:00 a 16:00."
+        )
+        st.markdown("""
+        **Cómo cargar:**
+        1. Entre a **Cargar roles**.  
+        2. Seleccione la fecha.  
+        3. Abra la profesión correspondiente.  
+        4. En el turno, marque el nombre del personal.  
+        5. Escriba **Entrada** y **Salida**.  
+        6. Presione **Guardar** en ese turno.
+        """)
+        st.warning("Se mantiene el límite de 5 personas por profesión y turno.")
 
     with tab_mensaje:
         st.subheader("Mensaje inferior visible para personal y jefaturas")

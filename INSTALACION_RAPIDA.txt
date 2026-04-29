@@ -1,7 +1,7 @@
 ROL DE TURNOS - PERSONAL DE SALUD
 BANCO DE SANGRE DE TARIJA
 
-VERSIÓN STREAMLIT CLOUD
+VERSIÓN STREAMLIT CLOUD - HORARIOS INDIVIDUALES
 
 ACCESOS INICIALES:
 
@@ -14,12 +14,20 @@ Usuario: admin
 Contraseña: admin123
 
 NOVEDADES DE ESTA VERSIÓN:
-- Cada turno muestra su horario de trabajo.
-- El administrador puede cambiar la hora de inicio y salida desde la pestaña HORARIOS.
-- Horarios por defecto:
-  Mañana: 07:00 a 13:00
-  Tarde: 13:00 a 19:00
-  Noche: 19:00 a 07:00
+- El administrador puede colocar hora de entrada y salida para cada persona.
+- Ejemplo: Dra. Jaqueline de 12:00 a 16:00.
+- En la pantalla del personal se ve cada nombre con su horario individual.
+- Se mantiene el máximo de 5 personas por profesión y turno.
+- El mensaje inferior sigue siendo activable con check desde administrador.
+
+CÓMO CARGAR HORARIOS INDIVIDUALES:
+1. Entrar como administrador.
+2. Ir a Cargar roles.
+3. Seleccionar la fecha.
+4. Abrir la profesión: Médicos, Enfermeras o Bioquímicos / Biotecnólogos.
+5. En el turno correspondiente, marcar al personal.
+6. Colocar Entrada y Salida.
+7. Presionar Guardar en ese turno.
 
 INSTALACIÓN EN STREAMLIT CLOUD:
 1. Crear un repositorio en GitHub.
