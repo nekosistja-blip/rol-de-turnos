@@ -27,6 +27,12 @@ SHIFTS = [
     ("Noche", "🌙", "#CFE2FF", "#123C69"),
 ]
 
+DEFAULT_SHIFT_HOURS = {
+    "Mañana": ("07:00", "13:00"),
+    "Tarde": ("13:00", "19:00"),
+    "Noche": ("19:00", "07:00"),
+}
+
 DEFAULT_USERS = [
     ("personal", "personal123", "user", "Personal / Jefaturas"),
     ("admin", "admin123", "admin", "Administrador"),
@@ -120,10 +126,21 @@ st.markdown(
     .shift-title {
         font-size: clamp(1.35rem, 5vw, 2.1rem);
         font-weight: 900;
-        margin-bottom: .55rem;
+        margin-bottom: .25rem;
         display: flex;
         align-items: center;
         gap: .5rem;
+    }
+    .shift-hours {
+        display: inline-block;
+        background: rgba(255,255,255,.72);
+        border: 1px solid rgba(15, 23, 42, .12);
+        border-radius: 999px;
+        padding: .35rem .65rem;
+        margin-bottom: .6rem;
+        font-size: clamp(1rem, 3.8vw, 1.35rem);
+        font-weight: 900;
+        letter-spacing: .01em;
     }
     .staff-pill {
         background: rgba(255,255,255,.72);
@@ -277,6 +294,9 @@ def init_db() -> None:
         "public_message": "",
         "public_message_active": "0",
     }
+    for shift_name, (start_time, end_time) in DEFAULT_SHIFT_HOURS.items():
+        defaults[f"shift_{shift_name}_start"] = start_time
+        defaults[f"shift_{shift_name}_end"] = end_time
     for key, value in defaults.items():
         cur.execute("INSERT OR IGNORE INTO settings(key, value) VALUES(?,?)", (key, value))
 
@@ -318,6 +338,19 @@ def set_setting(key: str, value: str) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def get_shift_hours(shift: str) -> Tuple[str, str]:
+    default_start, default_end = DEFAULT_SHIFT_HOURS.get(shift, ("", ""))
+    start = get_setting(f"shift_{shift}_start", default_start)
+    end = get_setting(f"shift_{shift}_end", default_end)
+    return start, end
+
+
+def set_shift_hours(shift: str, start_time: str, end_time: str) -> None:
+    set_setting(f"shift_{shift}_start", start_time)
+    set_setting(f"shift_{shift}_end", end_time)
+    log_action("HORARIO_TURNO", f"Se actualizó {shift}: {start_time} a {end_time}")
 
 
 def list_staff(active_only: bool = False, profession: Optional[str] = None) -> List[sqlite3.Row]:
@@ -497,6 +530,7 @@ def render_roster(selected_date: date) -> None:
         cols = st.columns(3)
         for idx, (shift, icon, bg, fg) in enumerate(SHIFTS):
             names = by_key.get((profession, shift), [])
+            start_time, end_time = get_shift_hours(shift)
             with cols[idx]:
                 people_html = ""
                 if names:
@@ -508,6 +542,7 @@ def render_roster(selected_date: date) -> None:
                     f"""
                     <div class='shift-card' style='background:{bg}; color:{fg};'>
                         <div class='shift-title'>{icon} {html_escape(shift)}</div>
+                        <div class='shift-hours'>🕒 {html_escape(start_time)} a {html_escape(end_time)}</div>
                         {people_html}
                     </div>
                     """,
@@ -570,8 +605,8 @@ def admin_view() -> None:
     sidebar_session()
     st.success("Modo administrador: puede cargar roles, personal y mensaje visible.")
 
-    tab_rol, tab_personal, tab_mensaje, tab_seguridad, tab_exportar = st.tabs(
-        ["📅 Cargar roles", "👥 Personal", "📢 Mensaje inferior", "🔐 Usuarios", "📦 Respaldo"]
+    tab_rol, tab_personal, tab_horarios, tab_mensaje, tab_seguridad, tab_exportar = st.tabs(
+        ["📅 Cargar roles", "👥 Personal", "⏰ Horarios", "📢 Mensaje inferior", "🔐 Usuarios", "📦 Respaldo"]
     )
 
     with tab_rol:
@@ -677,6 +712,60 @@ def admin_view() -> None:
                     delete_staff(selected_id)
                     st.success("Personal eliminado.")
                     st.rerun()
+
+    with tab_horarios:
+        st.subheader("Horarios visibles por cada turno")
+        st.info("Estos horarios aparecerán en letras grandes dentro de cada turno, tanto para personal como para jefaturas.")
+
+        with st.form("shift_hours_form"):
+            new_hours = {}
+            for shift, icon, bg, fg in SHIFTS:
+                current_start, current_end = get_shift_hours(shift)
+                st.markdown(f"### {icon} {shift}")
+                c1, c2 = st.columns(2)
+                with c1:
+                    start_value = st.text_input(
+                        f"Hora de inicio - {shift}",
+                        value=current_start,
+                        key=f"start_{shift}",
+                        placeholder="Ejemplo: 07:00",
+                    )
+                with c2:
+                    end_value = st.text_input(
+                        f"Hora de salida - {shift}",
+                        value=current_end,
+                        key=f"end_{shift}",
+                        placeholder="Ejemplo: 13:00",
+                    )
+                new_hours[shift] = (start_value.strip(), end_value.strip())
+
+            save_hours = st.form_submit_button("Guardar horarios", use_container_width=True)
+
+        if save_hours:
+            incomplete = [shift for shift, (start, end) in new_hours.items() if not start or not end]
+            if incomplete:
+                st.error("Debe colocar hora de inicio y hora de salida en todos los turnos.")
+            else:
+                for shift, (start, end) in new_hours.items():
+                    set_shift_hours(shift, start, end)
+                st.success("Horarios actualizados correctamente.")
+                st.rerun()
+
+        st.divider()
+        st.subheader("Vista previa de horarios")
+        cols = st.columns(3)
+        for idx, (shift, icon, bg, fg) in enumerate(SHIFTS):
+            start_time, end_time = get_shift_hours(shift)
+            with cols[idx]:
+                st.markdown(
+                    f"""
+                    <div class='shift-card' style='background:{bg}; color:{fg}; min-height:auto;'>
+                        <div class='shift-title'>{icon} {html_escape(shift)}</div>
+                        <div class='shift-hours'>🕒 {html_escape(start_time)} a {html_escape(end_time)}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
     with tab_mensaje:
         st.subheader("Mensaje inferior visible para personal y jefaturas")

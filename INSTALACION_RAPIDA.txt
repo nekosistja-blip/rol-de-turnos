@@ -1,7 +1,9 @@
 ROL DE TURNOS - PERSONAL DE SALUD
 BANCO DE SANGRE DE TARIJA
 
-ACCESOS INICIALES
+VERSIÓN STREAMLIT CLOUD
+
+ACCESOS INICIALES:
 
 PERSONAL / JEFATURAS
 Usuario: personal
@@ -11,43 +13,29 @@ ADMINISTRADOR
 Usuario: admin
 Contraseña: admin123
 
-NOTA
-La pantalla de ingreso de la app ya no muestra usuarios ni contraseñas.
-El botón SALIR aparece también para el personal y vuelve a la pantalla principal.
+NOVEDADES DE ESTA VERSIÓN:
+- Cada turno muestra su horario de trabajo.
+- El administrador puede cambiar la hora de inicio y salida desde la pestaña HORARIOS.
+- Horarios por defecto:
+  Mañana: 07:00 a 13:00
+  Tarde: 13:00 a 19:00
+  Noche: 19:00 a 07:00
 
-PASOS PARA SUBIR A GITHUB
+INSTALACIÓN EN STREAMLIT CLOUD:
+1. Crear un repositorio en GitHub.
+2. Subir todos los archivos de esta carpeta.
+3. Entrar a Streamlit Cloud.
+4. Crear una nueva app.
+5. Seleccionar el repositorio.
+6. En Main file path colocar: app.py
+7. Presionar Deploy.
+8. Compartir el enlace con personal y jefaturas.
 
-1. Descomprime este archivo ZIP.
-2. Entra a tu cuenta de GitHub.
-3. Crea un repositorio nuevo, por ejemplo: rol-salud-streamlit.
-4. Sube todos los archivos de la carpeta:
-   - app.py
-   - requirements.txt
-   - README.md
-   - INSTALACION_RAPIDA.txt
-   - carpeta .streamlit
+INSTALACIÓN LOCAL:
+1. Abrir terminal dentro de esta carpeta.
+2. Ejecutar:
+   pip install -r requirements.txt
+   streamlit run app.py
 
-PASOS PARA STREAMLIT CLOUD
-
-1. Entra a https://share.streamlit.io
-2. Click en Create app.
-3. Selecciona tu repositorio de GitHub.
-4. En Main file path coloca: app.py
-5. Click en Deploy.
-6. Copia el enlace generado y compártelo con el personal.
-
-USO EN CELULAR
-
-- Abrir el enlace de Streamlit Cloud desde Chrome o Safari.
-- El personal entra con usuario personal.
-- El administrador entra con usuario admin.
-
-MENSAJE INFERIOR
-
-El administrador debe entrar a la pestaña:
-📢 Mensaje inferior
-
-Ahí puede escribir un mensaje y activar el check:
-Mostrar mensaje al personal
-
-Cuando esté activado, el mensaje aparecerá abajo del rol diario.
+RECOMENDACIÓN:
+Después del primer ingreso, cambiar las contraseñas desde el panel del administrador.

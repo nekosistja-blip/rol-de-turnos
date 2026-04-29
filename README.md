@@ -2,7 +2,7 @@
 
 **BANCO DE SANGRE DE TARIJA**
 
-Aplicación móvil en línea creada con **Streamlit + SQLite** para cargar y visualizar roles de personal de salud por fecha, profesión y turno.
+Aplicación móvil en línea creada con **Streamlit + SQLite** para cargar y visualizar roles de personal de salud por fecha, profesión, turno y horario.
 
 ## Accesos iniciales
 
@@ -23,6 +23,8 @@ Aplicación móvil en línea creada con **Streamlit + SQLite** para cargar y vis
 - Subtítulo institucional: Banco de Sangre de Tarija.
 - Botón **Salir** visible para personal y administrador.
 - Tres turnos: Mañana, Tarde y Noche.
+- Horario visible en cada turno, por ejemplo: **07:00 a 13:00**.
+- Panel administrador para modificar la hora de inicio y salida de cada turno.
 - Tres grupos profesionales:
   - Médicos
   - Enfermeras
@@ -35,9 +37,18 @@ Aplicación móvil en línea creada con **Streamlit + SQLite** para cargar y vis
   - Dar bajas.
   - Eliminar registros.
   - Cargar roles por fecha.
+  - Cambiar horarios de los turnos.
   - Activar/desactivar mensaje inferior visible.
   - Cambiar contraseñas.
   - Descargar respaldo de base de datos.
+
+## Horarios por defecto
+
+- Mañana: `07:00 a 13:00`
+- Tarde: `13:00 a 19:00`
+- Noche: `19:00 a 07:00`
+
+Estos horarios pueden cambiarse desde el panel de administrador, pestaña **⏰ Horarios**.
 
 ## Instalación local
 
