@@ -4,6 +4,9 @@ import hmac
 import os
 import html
 import re
+import shutil
+import tempfile
+from pathlib import Path
 from datetime import date, datetime
 from typing import List, Dict, Optional, Tuple
 
@@ -14,7 +17,14 @@ import streamlit as st
 # =============================
 APP_TITLE = "ROL DE TURNOS - PERSONAL DE SALUD"
 APP_SUBTITLE = "BANCO DE SANGRE DE TARIJA"
-DB_PATH = os.environ.get("ROL_SALUD_DB", "rol_salud.db")
+DATA_DIR = Path(os.environ.get("ROL_SALUD_DATA_DIR", Path.home() / ".rol_turnos_salud"))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = os.environ.get("ROL_SALUD_DB", str(DATA_DIR / "rol_salud.db"))
+# Compatibilidad: si existe una base antigua en la carpeta del proyecto, se copia una sola vez
+# a la carpeta persistente para evitar pérdidas al reiniciar o cambiar de día.
+OLD_DB_PATH = Path("rol_salud.db")
+if not Path(DB_PATH).exists() and OLD_DB_PATH.exists() and str(OLD_DB_PATH) != str(DB_PATH):
+    shutil.copy2(OLD_DB_PATH, DB_PATH)
 
 PROFESSIONS = [
     "Médicos",
@@ -220,8 +230,10 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def get_conn() -> sqlite3.Connection:
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -519,6 +531,67 @@ def update_password(username: str, new_password: str) -> None:
     conn.commit()
     conn.close()
     log_action("CAMBIO_CLAVE", f"Se cambió la contraseña del usuario {username}")
+
+
+def validate_sqlite_backup(db_file: str) -> Tuple[bool, str]:
+    required_tables = {"users", "staff", "assignments", "settings", "audit_log"}
+    try:
+        conn = sqlite3.connect(db_file)
+        cur = conn.cursor()
+        cur.execute("PRAGMA integrity_check")
+        integrity = cur.fetchone()[0]
+        if integrity != "ok":
+            conn.close()
+            return False, f"La base no pasó la validación SQLite: {integrity}"
+        rows = cur.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        tables = {r[0] for r in rows}
+        missing = required_tables - tables
+        conn.close()
+        if missing:
+            return False, "El archivo no corresponde a este sistema. Faltan tablas: " + ", ".join(sorted(missing))
+        return True, "Archivo válido."
+    except Exception as exc:
+        return False, f"No se pudo leer el respaldo: {exc}"
+
+
+def import_database_backup(uploaded_file) -> Tuple[bool, str]:
+    if uploaded_file is None:
+        return False, "Debe seleccionar un archivo de respaldo .db."
+
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
+        tmp.write(uploaded_file.getbuffer())
+        tmp_path = tmp.name
+
+    try:
+        ok, msg = validate_sqlite_backup(tmp_path)
+        if not ok:
+            return False, msg
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        current_path = Path(DB_PATH)
+        if current_path.exists():
+            safety_copy = current_path.with_name(f"rol_salud_antes_importar_{timestamp}.db")
+            shutil.copy2(current_path, safety_copy)
+
+        os.replace(tmp_path, DB_PATH)
+        init_db()
+        log_action("IMPORTAR_RESPALDO", f"Se importó respaldo el {timestamp}")
+        return True, "Respaldo importado correctamente. La información fue restaurada."
+    except Exception as exc:
+        return False, f"Error al importar respaldo: {exc}"
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+def get_database_size_label() -> str:
+    if not os.path.exists(DB_PATH):
+        return "0 KB"
+    size = os.path.getsize(DB_PATH)
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / (1024 * 1024):.2f} MB"
 
 
 def get_users() -> List[sqlite3.Row]:
@@ -855,18 +928,40 @@ def admin_view() -> None:
                 st.success("Contraseña actualizada correctamente.")
 
     with tab_exportar:
-        st.subheader("Respaldo rápido")
-        st.write("Puede descargar la base SQLite para tener una copia de seguridad.")
+        st.subheader("Respaldo e importación de información")
+        st.success("La base ahora se guarda en una carpeta persistente del usuario para evitar pérdidas por reinicios internos del sistema.")
+        st.write(f"**Ubicación de la base activa:** `{DB_PATH}`")
+        st.write(f"**Tamaño actual:** {get_database_size_label()}")
+
+        st.markdown("### Descargar respaldo")
+        st.write("Descargue este archivo después de cargar o modificar roles importantes. Ese mismo archivo se puede importar nuevamente desde esta pantalla.")
         if os.path.exists(DB_PATH):
             with open(DB_PATH, "rb") as f:
                 st.download_button(
-                    "Descargar base de datos",
+                    "⬇️ Descargar respaldo de la base",
                     data=f.read(),
                     file_name=f"rol_salud_backup_{date.today().isoformat()}.db",
                     mime="application/octet-stream",
                     use_container_width=True,
                 )
-        st.caption("En Streamlit Cloud, si vuelve a desplegar desde cero, conviene guardar respaldos periódicos.")
+        else:
+            st.warning("Aún no existe una base de datos para descargar.")
+
+        st.divider()
+        st.markdown("### Importar respaldo")
+        st.warning("Al importar, se reemplazará la información actual por la información del respaldo seleccionado. Antes de reemplazar, el sistema crea una copia de seguridad automática de la base actual.")
+        uploaded_backup = st.file_uploader("Seleccione el archivo de respaldo generado por el sistema (.db)", type=["db", "sqlite", "sqlite3"])
+        confirm_import = st.checkbox("Confirmo que deseo restaurar este respaldo y reemplazar la información actual")
+        if st.button("⬆️ Importar respaldo", use_container_width=True, disabled=not confirm_import):
+            ok, msg = import_database_backup(uploaded_backup)
+            if ok:
+                st.success(msg)
+                st.info("Vuelva a iniciar sesión o actualice la página para ver la información restaurada.")
+                st.rerun()
+            else:
+                st.error(msg)
+
+        st.caption("Recomendación: descargue un respaldo al finalizar cada semana o cada mes, y guárdelo fuera del sistema.")
 
 # =============================
 # INICIO
